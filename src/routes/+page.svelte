@@ -4,6 +4,10 @@
 	let mounted = false;
 	let downloadUrl = 'https://github.com/PxPerfectMike/signals-site/releases/latest/download/signals-demo-win64.zip';
 
+	// Intro state - starts with intro screen
+	let showIntro = true;
+	let transitioning = false;
+
 	// Audio state
 	let audio;
 	let audioContext;
@@ -20,9 +24,6 @@
 	let energy = 0;
 	let beatPulse = 0;
 	let lastBass = 0;
-
-	// Visualizer data for template
-	let vizHeights = new Array(32).fill(4);
 
 	// Particles
 	let particles = [];
@@ -52,7 +53,11 @@
 		audioInitialized = true;
 	}
 
-	async function startAudio() {
+	async function enterSite() {
+		if (transitioning) return;
+		transitioning = true;
+
+		// Initialize and start audio
 		if (!audioInitialized) {
 			initAudio();
 		}
@@ -65,11 +70,11 @@
 			isPlaying = true;
 			isMuted = false;
 		} catch (e) {
-			// Autoplay blocked - user needs to click
-			console.log('Autoplay blocked, user interaction required');
-			isPlaying = false;
-			isMuted = true;
+			console.log('Audio play failed:', e);
 		}
+
+		// Transition to main site
+		showIntro = false;
 	}
 
 	function toggleMute() {
@@ -149,15 +154,6 @@
 			beatPulse *= 0.85;
 		}
 		lastBass = bass;
-
-		// Update visualizer heights
-		const newHeights = [];
-		for (let i = 0; i < 32; i++) {
-			const idx = Math.floor(i * (bufferLength / 32));
-			const val = dataArray[idx] / 255;
-			newHeights.push(Math.max(4, val * 100));
-		}
-		vizHeights = newHeights;
 	}
 
 	function spawnParticle(onBeat = false) {
@@ -214,9 +210,6 @@
 		mounted = true;
 		lastTime = performance.now();
 		animationFrame = requestAnimationFrame(animate);
-
-		// Try to autoplay
-		startAudio();
 	});
 
 	onDestroy(() => {
@@ -237,6 +230,21 @@
 	<title>SIGNALS - A Music-Driven Survival Game</title>
 	<meta name="description" content="SIGNALS is a music-reactive survival game where you dodge enemies and survive the beat. Download the free demo now!" />
 </svelte:head>
+
+<!-- INTRO SCREEN -->
+{#if showIntro}
+<div class="intro-screen" class:mounted>
+	<h1 class="intro-title">
+		<span class="letter">S</span><span class="letter">I</span><span class="letter">G</span><span class="letter">N</span><span class="letter">A</span><span class="letter">L</span><span class="letter">S</span>
+	</h1>
+
+	<button class="enter-btn" class:mounted on:click={enterSite}>
+		<span class="btn-text">Feel the Rhythm</span>
+		<div class="btn-glow"></div>
+	</button>
+</div>
+{:else}
+<!-- MAIN SITE (after intro) -->
 
 <!-- Music-reactive background layer -->
 <div
@@ -279,7 +287,6 @@
 <!-- Floating geometric shapes -->
 <div
 	class="shapes"
-	class:mounted
 	class:playing={isPlaying}
 	style="--bass: {bass}; --energy: {energy}; --beat: {beatPulse};"
 >
@@ -316,36 +323,25 @@
 	{/if}
 </button>
 
-<!-- Visualizer bars at bottom -->
-<div class="visualizer" class:playing={isPlaying}>
-	{#each vizHeights as height, i}
-		<div
-			class="viz-bar"
-			style="height: {height}%; background: linear-gradient(to top, hsl({180 + i * 3}, 100%, 50%), hsl({280 + i * 2}, 100%, 50%));"
-		></div>
-	{/each}
-</div>
-
 <!-- Hero Section -->
 <section class="hero">
 	<div class="hero-content">
 		<h1
 			class="title"
-			class:mounted
 			class:playing={isPlaying}
 			style="--bass: {bass}; --energy: {energy}; --beat: {beatPulse};"
 		>
 			<span class="letter">S</span><span class="letter">I</span><span class="letter">G</span><span class="letter">N</span><span class="letter">A</span><span class="letter">L</span><span class="letter">S</span>
 		</h1>
-		<p class="tagline" class:mounted>A Music-Driven Survival Experience</p>
+		<p class="tagline">A Music-Driven Survival Experience</p>
 
-		<div class="hero-description" class:mounted>
+		<div class="hero-description">
 			<p class="desc-line">Dive into a neon-soaked world where music is your guide and survival is your goal.</p>
 			<p class="desc-line">Every beat pulses through the environment, every enemy moves to the rhythm.</p>
 			<p class="desc-cta">Survive the song to win.</p>
 		</div>
 
-		<div class="cta-buttons" class:mounted>
+		<div class="cta-buttons">
 			<a
 				href={downloadUrl}
 				class="btn btn-primary"
@@ -449,8 +445,147 @@
 		<p class="copyright">SIGNALS Demo &copy; 2024</p>
 	</div>
 </footer>
+{/if}
 
 <style>
+	/* ==================== INTRO SCREEN ==================== */
+	.intro-screen {
+		position: fixed;
+		top: 0;
+		left: 0;
+		width: 100%;
+		height: 100%;
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		justify-content: center;
+		background: var(--bg-darker);
+		z-index: 9999;
+	}
+
+	.intro-title {
+		font-family: var(--font-game);
+		font-size: clamp(5rem, 20vw, 14rem);
+		font-weight: normal;
+		letter-spacing: 0.2em;
+		display: flex;
+		justify-content: center;
+		gap: 0.02em;
+		margin-bottom: 4rem;
+	}
+
+	.intro-title .letter {
+		display: inline-block;
+		opacity: 0;
+		transform: translateY(80px);
+		text-shadow:
+			0 0 20px var(--primary-cyan),
+			0 0 40px var(--primary-cyan),
+			0 0 60px var(--primary-cyan),
+			0 0 100px var(--primary-blue);
+	}
+
+	.intro-screen.mounted .intro-title .letter {
+		animation: introLetterReveal 1s ease forwards;
+	}
+
+	.intro-screen.mounted .intro-title .letter:nth-child(1) { animation-delay: 0.1s; }
+	.intro-screen.mounted .intro-title .letter:nth-child(2) { animation-delay: 0.2s; }
+	.intro-screen.mounted .intro-title .letter:nth-child(3) { animation-delay: 0.3s; }
+	.intro-screen.mounted .intro-title .letter:nth-child(4) { animation-delay: 0.4s; }
+	.intro-screen.mounted .intro-title .letter:nth-child(5) { animation-delay: 0.5s; }
+	.intro-screen.mounted .intro-title .letter:nth-child(6) { animation-delay: 0.6s; }
+	.intro-screen.mounted .intro-title .letter:nth-child(7) { animation-delay: 0.7s; }
+
+	@keyframes introLetterReveal {
+		to {
+			opacity: 1;
+			transform: translateY(0);
+		}
+	}
+
+	/* Enter button */
+	.enter-btn {
+		position: relative;
+		padding: 1.2rem 3rem;
+		font-family: var(--font-display);
+		font-size: 1.3rem;
+		font-weight: 600;
+		letter-spacing: 0.2em;
+		text-transform: uppercase;
+		background: transparent;
+		border: 2px solid var(--primary-cyan);
+		color: var(--primary-cyan);
+		cursor: pointer;
+		overflow: hidden;
+		opacity: 0;
+		transform: translateY(30px);
+		transition: all 0.4s ease;
+	}
+
+	.enter-btn.mounted {
+		animation: btnFadeIn 0.8s ease 1.2s forwards;
+	}
+
+	@keyframes btnFadeIn {
+		to {
+			opacity: 1;
+			transform: translateY(0);
+		}
+	}
+
+	.enter-btn:hover {
+		background: rgba(0, 255, 204, 0.15);
+		box-shadow:
+			0 0 30px rgba(0, 255, 204, 0.5),
+			0 0 60px rgba(0, 255, 204, 0.3),
+			inset 0 0 30px rgba(0, 255, 204, 0.1);
+		transform: translateY(-3px);
+		color: var(--text-white);
+	}
+
+	.enter-btn:hover .btn-text {
+		text-shadow: 0 0 20px var(--primary-cyan);
+	}
+
+	.btn-glow {
+		position: absolute;
+		top: 50%;
+		left: 50%;
+		width: 0;
+		height: 0;
+		background: radial-gradient(circle, rgba(0, 255, 204, 0.4) 0%, transparent 70%);
+		border-radius: 50%;
+		transform: translate(-50%, -50%);
+		transition: all 0.4s ease;
+		pointer-events: none;
+	}
+
+	.enter-btn:hover .btn-glow {
+		width: 300px;
+		height: 300px;
+	}
+
+	/* Subtle ambient glow pulse on intro screen */
+	.intro-screen::before {
+		content: '';
+		position: absolute;
+		top: 50%;
+		left: 50%;
+		width: 600px;
+		height: 600px;
+		background: radial-gradient(circle, rgba(0, 255, 204, 0.08) 0%, transparent 70%);
+		transform: translate(-50%, -50%);
+		animation: ambientPulse 4s ease-in-out infinite;
+	}
+
+	@keyframes ambientPulse {
+		0%, 100% { opacity: 0.3; transform: translate(-50%, -50%) scale(0.8); }
+		50% { opacity: 0.6; transform: translate(-50%, -50%) scale(1.2); }
+	}
+
+	/* ==================== MAIN SITE STYLES ==================== */
+
 	/* Music-reactive background - STRONGER */
 	.reactive-bg {
 		position: fixed;
@@ -604,35 +739,6 @@
 		}
 	}
 
-	/* Visualizer - FIXED */
-	.visualizer {
-		position: fixed;
-		bottom: 0;
-		left: 0;
-		width: 100%;
-		height: 100px;
-		display: flex;
-		align-items: flex-end;
-		justify-content: center;
-		gap: 3px;
-		padding: 0 5%;
-		pointer-events: none;
-		z-index: 5;
-		opacity: 0.3;
-	}
-
-	.visualizer.playing {
-		opacity: 0.8;
-	}
-
-	.viz-bar {
-		flex: 1;
-		max-width: 15px;
-		min-height: 4px;
-		border-radius: 2px 2px 0 0;
-		transition: height 0.05s linear;
-	}
-
 	/* Floating shapes - MORE REACTIVE */
 	.shapes {
 		position: fixed;
@@ -642,11 +748,6 @@
 		height: 100%;
 		pointer-events: none;
 		z-index: 0;
-		opacity: 0;
-		transition: opacity 1s ease;
-	}
-
-	.shapes.mounted {
 		opacity: 1;
 	}
 
@@ -752,6 +853,18 @@
 		position: relative;
 		padding: 2rem;
 		overflow: hidden;
+		animation: fadeInUp 0.8s ease;
+	}
+
+	@keyframes fadeInUp {
+		from {
+			opacity: 0;
+			transform: translateY(30px);
+		}
+		to {
+			opacity: 1;
+			transform: translateY(0);
+		}
 	}
 
 	.hero-content {
@@ -772,11 +885,8 @@
 		gap: 0.02em;
 	}
 
-	.letter {
+	.title .letter {
 		display: inline-block;
-		opacity: 0;
-		transform: translateY(50px);
-		animation: letterReveal 0.8s ease forwards;
 		text-shadow:
 			0 0 10px var(--primary-cyan),
 			0 0 20px var(--primary-cyan),
@@ -794,49 +904,25 @@
 			0 0 calc(100px + var(--energy) * 100px) var(--primary-blue);
 	}
 
-	.mounted .letter:nth-child(1) { animation-delay: 0.1s; }
-	.mounted .letter:nth-child(2) { animation-delay: 0.2s; }
-	.mounted .letter:nth-child(3) { animation-delay: 0.3s; }
-	.mounted .letter:nth-child(4) { animation-delay: 0.4s; }
-	.mounted .letter:nth-child(5) { animation-delay: 0.5s; }
-	.mounted .letter:nth-child(6) { animation-delay: 0.6s; }
-	.mounted .letter:nth-child(7) { animation-delay: 0.7s; }
-
-	@keyframes letterReveal {
-		to {
-			opacity: 1;
-			transform: translateY(0);
-		}
-	}
-
 	.tagline {
 		font-size: 1.5rem;
 		color: var(--text-dim);
 		margin-bottom: 2rem;
 		letter-spacing: 0.3em;
 		text-transform: uppercase;
-		opacity: 0;
-		transform: translateY(20px);
-		transition: all 0.8s ease 0.8s;
+		animation: fadeIn 0.8s ease 0.2s backwards;
 	}
 
-	.tagline.mounted {
-		opacity: 1;
-		transform: translateY(0);
+	@keyframes fadeIn {
+		from { opacity: 0; }
+		to { opacity: 1; }
 	}
 
 	/* Hero description - REFORMATTED */
 	.hero-description {
 		max-width: 700px;
 		margin: 0 auto 3rem;
-		opacity: 0;
-		transform: translateY(20px);
-		transition: all 0.8s ease 1s;
-	}
-
-	.hero-description.mounted {
-		opacity: 1;
-		transform: translateY(0);
+		animation: fadeIn 0.8s ease 0.4s backwards;
 	}
 
 	.desc-line {
@@ -859,14 +945,7 @@
 		flex-direction: column;
 		align-items: center;
 		gap: 1rem;
-		opacity: 0;
-		transform: translateY(20px);
-		transition: all 0.8s ease 1.2s;
-	}
-
-	.cta-buttons.mounted {
-		opacity: 1;
-		transform: translateY(0);
+		animation: fadeIn 0.8s ease 0.6s backwards;
 	}
 
 	.btn.pulse {
@@ -1076,6 +1155,15 @@
 
 	/* Responsive */
 	@media (max-width: 768px) {
+		.intro-title {
+			letter-spacing: 0.1em;
+		}
+
+		.enter-btn {
+			padding: 1rem 2rem;
+			font-size: 1rem;
+		}
+
 		.title {
 			letter-spacing: 0.1em;
 		}
@@ -1104,10 +1192,6 @@
 
 		.mute-btn span {
 			display: none;
-		}
-
-		.visualizer {
-			height: 60px;
 		}
 
 		.desc-line {

@@ -8,6 +8,17 @@
 	let showIntro = true;
 	let transitioning = false;
 
+	// Download popup state
+	let showDownloadPopup = false;
+
+	function handleDownloadClick() {
+		showDownloadPopup = true;
+	}
+
+	function closeDownloadPopup() {
+		showDownloadPopup = false;
+	}
+
 	// Audio state
 	let audio;
 	let audioContext;
@@ -348,6 +359,7 @@
 				class:pulse={isPlaying && beatPulse > 0.5}
 				style="transform: scale({1 + beatPulse * 0.08});"
 				download
+				on:click={handleDownloadClick}
 			>
 				<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
 					<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
@@ -445,6 +457,36 @@
 		<p class="copyright">SIGNALS Demo &copy; 2024</p>
 	</div>
 </footer>
+
+<!-- Download Instructions Popup -->
+{#if showDownloadPopup}
+<div class="download-popup-overlay" on:click={closeDownloadPopup}>
+	<div class="download-popup" on:click|stopPropagation>
+		<button class="popup-close" on:click={closeDownloadPopup}>&times;</button>
+
+		<h3>Almost there!</h3>
+
+		<div class="popup-steps">
+			<div class="popup-step">
+				<span class="step-num">1</span>
+				<span class="step-text"><strong>Extract</strong> the downloaded .zip file</span>
+			</div>
+			<div class="popup-step">
+				<span class="step-num">2</span>
+				<span class="step-text">Windows may warn you — click <strong>"More info"</strong></span>
+			</div>
+			<div class="popup-step">
+				<span class="step-num">3</span>
+				<span class="step-text">Then click <strong>"Run anyway"</strong></span>
+			</div>
+		</div>
+
+		<p class="popup-note">The game is safe — Windows just doesn't recognize it yet!</p>
+
+		<button class="popup-got-it" on:click={closeDownloadPopup}>Got it!</button>
+	</div>
+</div>
+{/if}
 {/if}
 
 <style>
@@ -1151,6 +1193,142 @@
 	.copyright {
 		font-size: 0.8rem;
 		color: rgba(136, 153, 170, 0.5);
+	}
+
+	/* Download Popup */
+	.download-popup-overlay {
+		position: fixed;
+		top: 0;
+		left: 0;
+		width: 100%;
+		height: 100%;
+		background: rgba(0, 0, 0, 0.85);
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		z-index: 9999;
+		animation: fadeIn 0.2s ease;
+	}
+
+	.download-popup {
+		background: linear-gradient(135deg, rgba(2, 2, 8, 0.98) 0%, rgba(10, 10, 20, 0.98) 100%);
+		border: 2px solid var(--primary-cyan);
+		border-radius: 16px;
+		padding: 2rem 2.5rem;
+		max-width: 400px;
+		width: 90%;
+		position: relative;
+		box-shadow:
+			0 0 40px rgba(0, 255, 204, 0.3),
+			0 0 80px rgba(0, 255, 204, 0.1),
+			inset 0 0 60px rgba(0, 255, 204, 0.05);
+		animation: popIn 0.3s ease;
+	}
+
+	@keyframes popIn {
+		from {
+			transform: scale(0.9);
+			opacity: 0;
+		}
+		to {
+			transform: scale(1);
+			opacity: 1;
+		}
+	}
+
+	.popup-close {
+		position: absolute;
+		top: 12px;
+		right: 16px;
+		background: none;
+		border: none;
+		color: var(--text-dim);
+		font-size: 2rem;
+		cursor: pointer;
+		transition: color 0.2s ease;
+		line-height: 1;
+	}
+
+	.popup-close:hover {
+		color: var(--primary-cyan);
+	}
+
+	.download-popup h3 {
+		font-family: var(--font-display);
+		font-size: 1.5rem;
+		color: var(--primary-cyan);
+		margin-bottom: 1.5rem;
+		text-align: center;
+		text-shadow: 0 0 20px rgba(0, 255, 204, 0.5);
+	}
+
+	.popup-steps {
+		display: flex;
+		flex-direction: column;
+		gap: 1rem;
+		margin-bottom: 1.5rem;
+	}
+
+	.popup-step {
+		display: flex;
+		align-items: center;
+		gap: 1rem;
+	}
+
+	.step-num {
+		flex-shrink: 0;
+		width: 28px;
+		height: 28px;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		background: var(--primary-cyan);
+		color: var(--bg-dark);
+		font-family: var(--font-display);
+		font-weight: 700;
+		font-size: 0.9rem;
+		border-radius: 50%;
+	}
+
+	.step-text {
+		font-family: var(--font-body);
+		font-size: 1.05rem;
+		color: var(--text-dim);
+	}
+
+	.step-text strong {
+		color: var(--text-white);
+	}
+
+	.popup-note {
+		font-size: 0.85rem;
+		color: var(--text-dim);
+		text-align: center;
+		margin-bottom: 1.5rem;
+		opacity: 0.8;
+	}
+
+	.popup-got-it {
+		display: block;
+		width: 100%;
+		padding: 0.9rem;
+		font-family: var(--font-display);
+		font-size: 1rem;
+		font-weight: 600;
+		letter-spacing: 0.1em;
+		text-transform: uppercase;
+		background: linear-gradient(135deg, var(--primary-cyan), var(--primary-blue));
+		border: none;
+		border-radius: 8px;
+		color: var(--bg-dark);
+		cursor: pointer;
+		transition: all 0.3s ease;
+	}
+
+	.popup-got-it:hover {
+		background: linear-gradient(135deg, var(--primary-magenta), var(--primary-purple));
+		color: var(--text-white);
+		box-shadow: 0 0 30px rgba(255, 0, 170, 0.5);
 	}
 
 	/* Responsive */

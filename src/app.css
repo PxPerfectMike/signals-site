@@ -1,6 +1,15 @@
 /* SIGNALS - Dark Neon Theme */
 @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Rajdhani:wght@300;400;500;600;700&display=swap');
 
+/* Game font */
+@font-face {
+	font-family: 'Minimalhard';
+	src: url('/Minimalhard-yw2Y.ttf') format('truetype');
+	font-weight: normal;
+	font-style: normal;
+	font-display: swap;
+}
+
 :root {
 	--bg-dark: #020208;
 	--bg-darker: #010104;
@@ -12,6 +21,7 @@
 	--text-dim: #8899aa;
 	--glow-cyan: 0 0 20px rgba(0, 255, 204, 0.5), 0 0 40px rgba(0, 255, 204, 0.3);
 	--glow-magenta: 0 0 20px rgba(255, 0, 170, 0.5), 0 0 40px rgba(255, 0, 170, 0.3);
+	--font-game: 'Minimalhard', 'Orbitron', sans-serif;
 	--font-display: 'Orbitron', sans-serif;
 	--font-body: 'Rajdhani', sans-serif;
 }

@@ -9,19 +9,24 @@
 	let audioContext;
 	let analyser;
 	let dataArray;
-	let isMuted = true;
+	let isMuted = false;
 	let isPlaying = false;
 	let audioInitialized = false;
 
-	// Reactive values for visuals
+	// Reactive values for visuals - STRONGER reactions
 	let bass = 0;
 	let mids = 0;
 	let highs = 0;
 	let energy = 0;
+	let beatPulse = 0;
+	let lastBass = 0;
+
+	// Visualizer data for template
+	let vizHeights = new Array(32).fill(4);
 
 	// Particles
 	let particles = [];
-	const MAX_PARTICLES = 50;
+	const MAX_PARTICLES = 80;
 
 	// Animation frame
 	let animationFrame;
@@ -32,10 +37,12 @@
 		audio = new Audio('/song14.wav');
 		audio.loop = true;
 		audio.volume = 0.7;
+		audio.crossOrigin = 'anonymous';
 
 		audioContext = new (window.AudioContext || window.webkitAudioContext)();
 		analyser = audioContext.createAnalyser();
 		analyser.fftSize = 256;
+		analyser.smoothingTimeConstant = 0.3;
 
 		const source = audioContext.createMediaElementSource(audio);
 		source.connect(analyser);
@@ -43,6 +50,26 @@
 
 		dataArray = new Uint8Array(analyser.frequencyBinCount);
 		audioInitialized = true;
+	}
+
+	async function startAudio() {
+		if (!audioInitialized) {
+			initAudio();
+		}
+
+		try {
+			if (audioContext.state === 'suspended') {
+				await audioContext.resume();
+			}
+			await audio.play();
+			isPlaying = true;
+			isMuted = false;
+		} catch (e) {
+			// Autoplay blocked - user needs to click
+			console.log('Autoplay blocked, user interaction required');
+			isPlaying = false;
+			isMuted = true;
+		}
 	}
 
 	function toggleMute() {
@@ -67,54 +94,91 @@
 
 	function updateAudioData() {
 		if (!analyser || !isPlaying) {
-			bass = 0;
-			mids = 0;
-			highs = 0;
-			energy = 0;
+			// Decay values when not playing
+			bass *= 0.9;
+			mids *= 0.9;
+			highs *= 0.9;
+			energy *= 0.9;
+			beatPulse *= 0.85;
 			return;
 		}
 
 		analyser.getByteFrequencyData(dataArray);
 
-		// Calculate frequency bands
+		// Calculate frequency bands with STRONGER response
 		const bufferLength = dataArray.length;
 		let bassSum = 0, midsSum = 0, highsSum = 0;
 
-		// Bass: 0-10% of frequencies
-		for (let i = 0; i < bufferLength * 0.1; i++) {
+		// Bass: 0-10% of frequencies (sub bass and bass)
+		const bassEnd = Math.floor(bufferLength * 0.1);
+		for (let i = 0; i < bassEnd; i++) {
 			bassSum += dataArray[i];
 		}
-		bass = bassSum / (bufferLength * 0.1) / 255;
+		const rawBass = bassSum / bassEnd / 255;
 
 		// Mids: 10-50% of frequencies
-		for (let i = Math.floor(bufferLength * 0.1); i < bufferLength * 0.5; i++) {
+		const midsStart = bassEnd;
+		const midsEnd = Math.floor(bufferLength * 0.5);
+		for (let i = midsStart; i < midsEnd; i++) {
 			midsSum += dataArray[i];
 		}
-		mids = midsSum / (bufferLength * 0.4) / 255;
+		const rawMids = midsSum / (midsEnd - midsStart) / 255;
 
 		// Highs: 50-100% of frequencies
-		for (let i = Math.floor(bufferLength * 0.5); i < bufferLength; i++) {
+		for (let i = midsEnd; i < bufferLength; i++) {
 			highsSum += dataArray[i];
 		}
-		highs = highsSum / (bufferLength * 0.5) / 255;
+		const rawHighs = highsSum / (bufferLength - midsEnd) / 255;
+
+		// Apply with smoothing but keep it punchy
+		bass = bass * 0.3 + rawBass * 0.7;
+		mids = mids * 0.4 + rawMids * 0.6;
+		highs = highs * 0.5 + rawHighs * 0.5;
 
 		// Overall energy
 		energy = (bass * 0.5 + mids * 0.3 + highs * 0.2);
+
+		// Beat detection - trigger on bass spikes
+		if (bass > lastBass + 0.15 && bass > 0.4) {
+			beatPulse = 1;
+			// Spawn burst of particles on beat
+			for (let i = 0; i < 5; i++) {
+				spawnParticle(true);
+			}
+		} else {
+			beatPulse *= 0.85;
+		}
+		lastBass = bass;
+
+		// Update visualizer heights
+		const newHeights = [];
+		for (let i = 0; i < 32; i++) {
+			const idx = Math.floor(i * (bufferLength / 32));
+			const val = dataArray[idx] / 255;
+			newHeights.push(Math.max(4, val * 100));
+		}
+		vizHeights = newHeights;
 	}
 
-	function spawnParticle() {
-		if (particles.length >= MAX_PARTICLES) return;
-		if (!isPlaying || energy < 0.3) return;
+	function spawnParticle(onBeat = false) {
+		if (particles.length >= MAX_PARTICLES) {
+			// Remove oldest particle
+			particles = particles.slice(1);
+		}
+
+		const baseSpeed = onBeat ? 4 : 2;
+		const size = onBeat ? (8 + bass * 15) : (4 + bass * 8);
 
 		particles = [...particles, {
 			id: Math.random(),
-			x: Math.random() * 100,
-			y: 100 + Math.random() * 20,
-			vx: (Math.random() - 0.5) * 2,
-			vy: -2 - Math.random() * 3,
-			size: 4 + bass * 10,
-			hue: Math.random() * 60 + 160, // Cyan to purple range
-			life: 1
+			x: 10 + Math.random() * 80,
+			y: 105,
+			vx: (Math.random() - 0.5) * 3,
+			vy: -baseSpeed - Math.random() * 3,
+			size: size,
+			hue: Math.random() * 60 + 160,
+			life: 1,
+			onBeat: onBeat
 		}];
 	}
 
@@ -122,12 +186,12 @@
 		particles = particles
 			.map(p => ({
 				...p,
-				x: p.x + p.vx * dt * 30,
-				y: p.y + p.vy * dt * 30,
-				vy: p.vy + 0.5 * dt * 30, // Gravity
-				life: p.life - dt * 0.5
+				x: p.x + p.vx * dt * 40,
+				y: p.y + p.vy * dt * 40,
+				vy: p.vy + 0.15 * dt * 40,
+				life: p.life - dt * 0.4
 			}))
-			.filter(p => p.life > 0 && p.y < 120);
+			.filter(p => p.life > 0 && p.y < 120 && p.y > -10);
 	}
 
 	let lastTime = 0;
@@ -138,9 +202,9 @@
 		updateAudioData();
 		updateParticles(dt);
 
-		// Spawn particles on beats
-		if (Math.random() < bass * 0.5) {
-			spawnParticle();
+		// Spawn particles randomly based on energy
+		if (isPlaying && Math.random() < energy * 0.3) {
+			spawnParticle(false);
 		}
 
 		animationFrame = requestAnimationFrame(animate);
@@ -150,6 +214,9 @@
 		mounted = true;
 		lastTime = performance.now();
 		animationFrame = requestAnimationFrame(animate);
+
+		// Try to autoplay
+		startAudio();
 	});
 
 	onDestroy(() => {
@@ -174,29 +241,48 @@
 <!-- Music-reactive background layer -->
 <div
 	class="reactive-bg"
-	style="--bass: {bass}; --mids: {mids}; --highs: {highs}; --energy: {energy};"
+	class:playing={isPlaying}
+	style="
+		--bass: {bass};
+		--mids: {mids};
+		--highs: {highs};
+		--energy: {energy};
+		--beat: {beatPulse};
+	"
 ></div>
+
+<!-- Flash overlay on beats -->
+{#if beatPulse > 0.5}
+<div class="beat-flash" style="opacity: {beatPulse * 0.3};"></div>
+{/if}
 
 <!-- Particle layer -->
 <div class="particles">
 	{#each particles as particle (particle.id)}
 		<div
 			class="particle"
+			class:on-beat={particle.onBeat}
 			style="
 				left: {particle.x}%;
 				top: {particle.y}%;
 				width: {particle.size}px;
 				height: {particle.size}px;
-				background: hsl({particle.hue}, 100%, 60%);
+				background: hsl({particle.hue}, 100%, {particle.onBeat ? 70 : 60}%);
 				opacity: {particle.life};
-				box-shadow: 0 0 {particle.size * 2}px hsl({particle.hue}, 100%, 50%);
+				box-shadow: 0 0 {particle.size * 2}px hsl({particle.hue}, 100%, 50%),
+				            0 0 {particle.size * 4}px hsl({particle.hue}, 100%, 30%);
 			"
 		></div>
 	{/each}
 </div>
 
 <!-- Floating geometric shapes -->
-<div class="shapes" class:mounted class:playing={isPlaying} style="--bass: {bass}; --energy: {energy};">
+<div
+	class="shapes"
+	class:mounted
+	class:playing={isPlaying}
+	style="--bass: {bass}; --energy: {energy}; --beat: {beatPulse};"
+>
 	<div class="shape circle"></div>
 	<div class="shape square"></div>
 	<div class="shape triangle"></div>
@@ -206,7 +292,7 @@
 </div>
 
 <!-- Beat rings -->
-<div class="beat-rings" style="--bass: {bass}; --energy: {energy};">
+<div class="beat-rings" class:playing={isPlaying} style="--bass: {bass}; --energy: {energy}; --beat: {beatPulse};">
 	<div class="beat-ring"></div>
 	<div class="beat-ring delay-1"></div>
 	<div class="beat-ring delay-2"></div>
@@ -231,35 +317,42 @@
 </button>
 
 <!-- Visualizer bars at bottom -->
-{#if isPlaying}
-<div class="visualizer">
-	{#each Array(32) as _, i}
+<div class="visualizer" class:playing={isPlaying}>
+	{#each vizHeights as height, i}
 		<div
 			class="viz-bar"
-			style="height: {Math.max(4, (dataArray ? dataArray[i * 4] / 255 : 0) * 100)}%"
+			style="height: {height}%; background: linear-gradient(to top, hsl({180 + i * 3}, 100%, 50%), hsl({280 + i * 2}, 100%, 50%));"
 		></div>
 	{/each}
 </div>
-{/if}
 
 <!-- Hero Section -->
 <section class="hero">
 	<div class="hero-content">
-		<h1 class="title" class:mounted class:playing={isPlaying} style="--bass: {bass}; --energy: {energy};">
+		<h1
+			class="title"
+			class:mounted
+			class:playing={isPlaying}
+			style="--bass: {bass}; --energy: {energy}; --beat: {beatPulse};"
+		>
 			<span class="letter">S</span><span class="letter">I</span><span class="letter">G</span><span class="letter">N</span><span class="letter">A</span><span class="letter">L</span><span class="letter">S</span>
 		</h1>
 		<p class="tagline" class:mounted>A Music-Driven Survival Experience</p>
 
 		<div class="hero-description" class:mounted>
-			<p>
-				Dive into a neon-soaked world where music is your guide and survival is your goal.
-				Every beat pulses through the environment, every enemy moves to the rhythm.
-				<strong>Survive the song to win.</strong>
-			</p>
+			<p class="desc-line">Dive into a neon-soaked world where music is your guide and survival is your goal.</p>
+			<p class="desc-line">Every beat pulses through the environment, every enemy moves to the rhythm.</p>
+			<p class="desc-cta">Survive the song to win.</p>
 		</div>
 
 		<div class="cta-buttons" class:mounted>
-			<a href={downloadUrl} class="btn btn-primary" class:pulse={isPlaying && bass > 0.5} download>
+			<a
+				href={downloadUrl}
+				class="btn btn-primary"
+				class:pulse={isPlaying && beatPulse > 0.5}
+				style="transform: scale({1 + beatPulse * 0.08});"
+				download
+			>
 				<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
 					<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
 					<polyline points="7 10 12 15 17 10"></polyline>
@@ -272,7 +365,7 @@
 	</div>
 
 	<!-- Animated rings -->
-	<div class="rings" style="--bass: {bass};">
+	<div class="rings" style="--bass: {bass}; --beat: {beatPulse};">
 		<div class="ring"></div>
 		<div class="ring"></div>
 		<div class="ring"></div>
@@ -284,7 +377,7 @@
 	<h2 class="section-title">Features</h2>
 
 	<div class="features-grid">
-		<div class="feature-card" class:glow={isPlaying && bass > 0.4}>
+		<div class="feature-card" class:glow={isPlaying && bass > 0.35} style="transform: scale({1 + bass * 0.05});">
 			<div class="feature-icon">
 				<svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
 					<path d="M9 18V5l12-2v13"></path>
@@ -296,7 +389,7 @@
 			<p>Every visual element pulses with the beat. The hex grid, enemies, and effects all react to the music in real-time.</p>
 		</div>
 
-		<div class="feature-card" class:glow={isPlaying && mids > 0.4}>
+		<div class="feature-card" class:glow={isPlaying && mids > 0.35} style="transform: scale({1 + mids * 0.05});">
 			<div class="feature-icon magenta">
 				<svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
 					<polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon>
@@ -306,7 +399,7 @@
 			<p>Auto-aim lets you focus on movement. Dodge waves of music-synced enemies and survive until the song ends.</p>
 		</div>
 
-		<div class="feature-card" class:glow={isPlaying && highs > 0.4}>
+		<div class="feature-card" class:glow={isPlaying && highs > 0.35} style="transform: scale({1 + highs * 0.05});">
 			<div class="feature-icon purple">
 				<svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
 					<path d="M18 3a3 3 0 0 0-3 3v12a3 3 0 0 0 3 3 3 3 0 0 0 3-3 3 3 0 0 0-3-3H6a3 3 0 0 0-3 3 3 3 0 0 0 3 3 3 3 0 0 0 3-3V6a3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3h12a3 3 0 0 0 3-3 3 3 0 0 0-3-3z"></path>
@@ -358,7 +451,7 @@
 </footer>
 
 <style>
-	/* Music-reactive background */
+	/* Music-reactive background - STRONGER */
 	.reactive-bg {
 		position: fixed;
 		top: 0;
@@ -369,15 +462,37 @@
 		z-index: -3;
 		background: radial-gradient(
 			ellipse at 50% 50%,
-			rgba(0, 255, 204, calc(0.1 + var(--bass, 0) * 0.3)) 0%,
-			rgba(255, 0, 170, calc(0.05 + var(--mids, 0) * 0.2)) 30%,
-			rgba(136, 68, 255, calc(0.05 + var(--highs, 0) * 0.15)) 60%,
+			rgba(0, 255, 204, 0.08) 0%,
+			rgba(255, 0, 170, 0.05) 30%,
+			rgba(136, 68, 255, 0.03) 60%,
 			transparent 100%
 		);
-		transition: background 0.1s ease;
+		transition: all 0.05s ease;
 	}
 
-	/* Particles */
+	.reactive-bg.playing {
+		background: radial-gradient(
+			ellipse at 50% 50%,
+			rgba(0, 255, 204, calc(0.15 + var(--bass) * 0.5)) 0%,
+			rgba(255, 0, 170, calc(0.08 + var(--mids) * 0.4)) 30%,
+			rgba(136, 68, 255, calc(0.05 + var(--highs) * 0.3)) 60%,
+			transparent 100%
+		);
+	}
+
+	/* Beat flash overlay */
+	.beat-flash {
+		position: fixed;
+		top: 0;
+		left: 0;
+		width: 100%;
+		height: 100%;
+		background: radial-gradient(ellipse at center, rgba(0, 255, 204, 0.4) 0%, transparent 70%);
+		pointer-events: none;
+		z-index: 100;
+	}
+
+	/* Particles - bigger glow */
 	.particles {
 		position: fixed;
 		top: 0;
@@ -395,7 +510,17 @@
 		transform: translate(-50%, -50%);
 	}
 
-	/* Beat rings */
+	.particle.on-beat {
+		animation: particlePop 0.3s ease-out;
+	}
+
+	@keyframes particlePop {
+		0% { transform: translate(-50%, -50%) scale(0.5); }
+		50% { transform: translate(-50%, -50%) scale(1.5); }
+		100% { transform: translate(-50%, -50%) scale(1); }
+	}
+
+	/* Beat rings - MORE DRAMATIC */
 	.beat-rings {
 		position: fixed;
 		top: 50%;
@@ -403,40 +528,38 @@
 		transform: translate(-50%, -50%);
 		pointer-events: none;
 		z-index: -1;
+		opacity: 0.3;
+	}
+
+	.beat-rings.playing {
+		opacity: 1;
 	}
 
 	.beat-ring {
 		position: absolute;
-		border: 2px solid var(--primary-cyan);
+		border: 3px solid var(--primary-cyan);
 		border-radius: 50%;
-		opacity: calc(0.1 + var(--bass, 0) * 0.4);
-		width: calc(300px + var(--bass, 0) * 200px);
-		height: calc(300px + var(--bass, 0) * 200px);
+		width: 200px;
+		height: 200px;
 		top: 50%;
 		left: 50%;
-		transform: translate(-50%, -50%);
-		animation: beatPulse 2s ease-out infinite;
+		transform: translate(-50%, -50%) scale(calc(0.5 + var(--bass) * 1.5 + var(--beat) * 0.5));
+		opacity: calc(0.2 + var(--beat) * 0.6);
+		transition: transform 0.05s ease, opacity 0.05s ease;
 	}
 
 	.beat-ring.delay-1 {
-		animation-delay: 0.3s;
 		border-color: var(--primary-magenta);
+		width: 350px;
+		height: 350px;
+		border-width: 2px;
 	}
 
 	.beat-ring.delay-2 {
-		animation-delay: 0.6s;
 		border-color: var(--primary-purple);
-	}
-
-	@keyframes beatPulse {
-		0% {
-			transform: translate(-50%, -50%) scale(0.5);
-			opacity: 0.6;
-		}
-		100% {
-			transform: translate(-50%, -50%) scale(2);
-			opacity: 0;
-		}
+		width: 500px;
+		height: 500px;
+		border-width: 1px;
 	}
 
 	/* Mute button */
@@ -481,32 +604,36 @@
 		}
 	}
 
-	/* Visualizer */
+	/* Visualizer - FIXED */
 	.visualizer {
 		position: fixed;
 		bottom: 0;
 		left: 0;
 		width: 100%;
-		height: 80px;
+		height: 100px;
 		display: flex;
 		align-items: flex-end;
 		justify-content: center;
-		gap: 4px;
-		padding: 0 10%;
+		gap: 3px;
+		padding: 0 5%;
 		pointer-events: none;
 		z-index: 5;
+		opacity: 0.3;
+	}
+
+	.visualizer.playing {
+		opacity: 0.8;
 	}
 
 	.viz-bar {
 		flex: 1;
-		max-width: 20px;
-		background: linear-gradient(to top, var(--primary-cyan), var(--primary-magenta));
+		max-width: 15px;
+		min-height: 4px;
 		border-radius: 2px 2px 0 0;
-		transition: height 0.05s ease;
-		opacity: 0.7;
+		transition: height 0.05s linear;
 	}
 
-	/* Floating shapes - music reactive */
+	/* Floating shapes - MORE REACTIVE */
 	.shapes {
 		position: fixed;
 		top: 0;
@@ -523,26 +650,32 @@
 		opacity: 1;
 	}
 
-	.shapes.playing .shape {
-		animation-duration: 3s;
-	}
-
 	.shape {
 		position: absolute;
-		opacity: calc(0.15 + var(--energy, 0) * 0.3);
+		opacity: 0.15;
 		animation: float 20s ease-in-out infinite;
-		transition: opacity 0.3s ease;
+		transition: all 0.1s ease;
+	}
+
+	.shapes.playing .shape {
+		opacity: calc(0.2 + var(--energy) * 0.4);
+	}
+
+	.shapes.playing .shape.circle {
+		width: calc(300px + var(--bass) * 150px + var(--beat) * 100px);
+		height: calc(300px + var(--bass) * 150px + var(--beat) * 100px);
+		border-width: calc(2px + var(--beat) * 3px);
+		box-shadow: 0 0 calc(20px + var(--beat) * 40px) rgba(0, 255, 204, calc(var(--beat) * 0.5));
 	}
 
 	.shape.circle {
-		width: calc(300px + var(--bass, 0) * 100px);
-		height: calc(300px + var(--bass, 0) * 100px);
+		width: 300px;
+		height: 300px;
 		border: 2px solid var(--primary-cyan);
 		border-radius: 50%;
 		top: 10%;
 		left: 5%;
 		animation-delay: 0s;
-		transition: width 0.1s, height 0.1s;
 	}
 
 	.shape.square {
@@ -553,6 +686,10 @@
 		right: 10%;
 		animation-delay: -5s;
 		animation-duration: 25s;
+	}
+
+	.shapes.playing .shape.square {
+		transform: rotate(calc(var(--mids) * 45deg)) scale(calc(1 + var(--mids) * 0.3));
 	}
 
 	.shape.triangle {
@@ -623,7 +760,7 @@
 		max-width: 800px;
 	}
 
-	/* TITLE - Using game font */
+	/* TITLE - Using game font - SUPER REACTIVE */
 	.title {
 		font-family: var(--font-game);
 		font-size: clamp(4rem, 15vw, 10rem);
@@ -638,22 +775,23 @@
 	.letter {
 		display: inline-block;
 		opacity: 0;
-		transform: translateY(50px) scale(calc(1 + var(--bass, 0) * 0.1));
+		transform: translateY(50px);
 		animation: letterReveal 0.8s ease forwards;
 		text-shadow:
 			0 0 10px var(--primary-cyan),
 			0 0 20px var(--primary-cyan),
 			0 0 40px var(--primary-cyan),
 			0 0 80px var(--primary-blue);
-		transition: transform 0.1s ease, text-shadow 0.1s ease;
+		transition: text-shadow 0.05s ease, transform 0.05s ease;
 	}
 
 	.title.playing .letter {
+		transform: translateY(calc(var(--beat) * -10px)) scale(calc(1 + var(--beat) * 0.15));
 		text-shadow:
-			0 0 calc(10px + var(--bass, 0) * 20px) var(--primary-cyan),
-			0 0 calc(20px + var(--bass, 0) * 40px) var(--primary-cyan),
-			0 0 calc(40px + var(--energy, 0) * 60px) var(--primary-magenta),
-			0 0 calc(80px + var(--energy, 0) * 80px) var(--primary-blue);
+			0 0 calc(15px + var(--bass) * 30px) var(--primary-cyan),
+			0 0 calc(30px + var(--bass) * 50px) var(--primary-cyan),
+			0 0 calc(60px + var(--energy) * 80px) var(--primary-magenta),
+			0 0 calc(100px + var(--energy) * 100px) var(--primary-blue);
 	}
 
 	.mounted .letter:nth-child(1) { animation-delay: 0.1s; }
@@ -687,8 +825,9 @@
 		transform: translateY(0);
 	}
 
+	/* Hero description - REFORMATTED */
 	.hero-description {
-		max-width: 600px;
+		max-width: 700px;
 		margin: 0 auto 3rem;
 		opacity: 0;
 		transform: translateY(20px);
@@ -700,13 +839,19 @@
 		transform: translateY(0);
 	}
 
-	.hero-description p {
-		font-size: 1.2rem;
-		line-height: 1.8;
+	.desc-line {
+		font-size: 1.15rem;
+		line-height: 1.6;
+		margin-bottom: 0.3rem;
+		color: var(--text-dim);
 	}
 
-	.hero-description strong {
+	.desc-cta {
+		font-size: 1.3rem;
+		font-weight: 600;
 		color: var(--primary-cyan);
+		margin-top: 1rem;
+		text-shadow: 0 0 20px rgba(0, 255, 204, 0.5);
 	}
 
 	.cta-buttons {
@@ -725,13 +870,7 @@
 	}
 
 	.btn.pulse {
-		animation: btnPulse 0.15s ease;
-	}
-
-	@keyframes btnPulse {
-		0% { transform: scale(1); }
-		50% { transform: scale(1.05); }
-		100% { transform: scale(1); }
+		box-shadow: 0 0 40px rgba(0, 255, 204, 0.6), 0 0 80px rgba(255, 0, 170, 0.3);
 	}
 
 	.download-info {
@@ -752,8 +891,9 @@
 		position: absolute;
 		border: 1px solid var(--primary-cyan);
 		border-radius: 50%;
-		opacity: calc(0.1 + var(--bass, 0) * 0.2);
+		opacity: calc(0.1 + var(--bass) * 0.3 + var(--beat) * 0.3);
 		animation: ringPulse 4s ease-out infinite;
+		transition: opacity 0.1s ease;
 	}
 
 	.ring:nth-child(1) {
@@ -819,19 +959,19 @@
 		border-radius: 8px;
 		padding: 2rem;
 		text-align: center;
-		transition: all 0.3s ease;
+		transition: all 0.1s ease;
 	}
 
 	.feature-card:hover {
 		background: rgba(0, 255, 204, 0.05);
 		border-color: var(--primary-cyan);
-		transform: translateY(-5px);
 		box-shadow: 0 10px 40px rgba(0, 255, 204, 0.1);
 	}
 
 	.feature-card.glow {
 		border-color: var(--primary-cyan);
-		box-shadow: 0 0 30px rgba(0, 255, 204, 0.3);
+		box-shadow: 0 0 40px rgba(0, 255, 204, 0.4), 0 0 80px rgba(0, 255, 204, 0.2);
+		background: rgba(0, 255, 204, 0.08);
 	}
 
 	.feature-icon {
@@ -967,7 +1107,15 @@
 		}
 
 		.visualizer {
-			height: 50px;
+			height: 60px;
+		}
+
+		.desc-line {
+			font-size: 1rem;
+		}
+
+		.desc-cta {
+			font-size: 1.1rem;
 		}
 	}
 </style>

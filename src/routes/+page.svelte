@@ -3,7 +3,7 @@
 
 	let mounted = false;
 	// Download from GitHub Releases (upload signals-demo-win64.zip as a release asset)
-	let downloadUrl = 'https://github.com/PxPerfectMike/signals-site/releases/latest/download/signals-demo-win64.zip';
+	let downloadUrl = 'https://github.com/PxPerfectMike/Signals/releases/latest/download/signals-demo-win64.zip';
 
 	onMount(() => {
 		mounted = true;
